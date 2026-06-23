@@ -1,6 +1,28 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
+env/
+
+# Environment variables
 .env
+
+# Test/cache output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor and OS files
+.vscode/
+.idea/
+*.code-workspace
 .DS_Store
+Thumbs.db
+
+# Generated MediaPipe model file
+face_landmarker.task
