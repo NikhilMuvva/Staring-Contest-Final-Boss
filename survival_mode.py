@@ -4,7 +4,7 @@ import time
 
 import cv2
 
-from blink_detector import BlinkDetector
+from blink_input import BlinkInput
 
 LEADERBOARD_PATH = "leaderboard.json"
 CHALLENGE_TYPES = ["WIND_GUST", "LIGHT_FLASH", "FOCUS_ZONE", "FAKEOUT"]
@@ -37,7 +37,12 @@ def update_best_time(leaderboard, username, final_time):
 
 def top_scores(leaderboard, limit=5):
     """Return the highest scores first."""
-    return sorted(leaderboard.items(), key=lambda item: item[1], reverse=True)[:limit]
+    survival_scores = [
+        (name, score)
+        for name, score in leaderboard.items()
+        if not name.startswith("rhythm:")
+    ]
+    return sorted(survival_scores, key=lambda item: item[1], reverse=True)[:limit]
 
 
 def draw_center_text(frame, text, y, scale, color, thickness):
@@ -65,17 +70,15 @@ def format_debug_value(value):
     return str(value)
 
 
-def draw_debug_overlay(frame, debug):
+def draw_debug_overlay(frame, status):
     """Draw blink detector internals in the lower-left corner."""
     lines = [
-        f"raw: {format_debug_value(debug['raw_openness'])}",
-        f"smooth: {format_debug_value(debug['smoothed_openness'])}",
-        f"threshold: {format_debug_value(debug['blink_threshold'])}",
-        f"landmark_closed: {debug['landmark_closed']}",
-        f"blink_score: {format_debug_value(debug['blink_blendshape_score'])}",
-        f"blendshape_closed: {debug['blendshape_closed']}",
-        f"final_closed: {debug['final_closed_signal']}",
-        f"closed_frame_count: {debug['closed_frames']}",
+        f"face_found: {status['face_found']}",
+        f"raw: {format_debug_value(status['eye_openness'])}",
+        f"smooth: {format_debug_value(status['smoothed_eye_openness'])}",
+        f"threshold: {format_debug_value(status['threshold'])}",
+        f"state: {status['state']}",
+        f"blink_count: {status['blink_count']}",
     ]
 
     y = frame.shape[0] - 150
@@ -191,39 +194,55 @@ def reset_game(now):
     }
 
 
-def main():
-    username = input("Enter username: ").strip()
+def calibrate_for_game(blink_input):
+    """Run shared calibration and close its temporary camera window."""
+    calibrated = blink_input.calibrate(show_window=True)
+    try:
+        cv2.destroyWindow("Blink Input Test")
+    except cv2.error:
+        pass
+    return calibrated
+
+
+def main(username=None, launch_from_app=False, camera_index=0):
+    if username is None:
+        username = input("Enter username: ").strip()
 
     if not username:
         username = "Player"
 
     leaderboard = load_leaderboard()
 
-    cap = cv2.VideoCapture(0)
+    blink_input = BlinkInput(camera_index=camera_index)
 
-    if not cap.isOpened():
+    if not blink_input.is_opened:
         print("Could not open webcam.")
+        blink_input.release()
         return
-
-    detector = BlinkDetector()
 
     try:
         countdown_seconds = 3
-        screen = "menu"
+        screen = "game" if launch_from_app else "menu"
         game = reset_game(time.time())
         debug_overlay = False
+        pending_app_calibration = launch_from_app
 
         while True:
             now = time.time()
-            ret, frame = cap.read()
 
-            if not ret:
+            if pending_app_calibration:
+                pending_app_calibration = False
+                if calibrate_for_game(blink_input):
+                    game["countdown_started"] = True
+                    game["countdown_start_time"] = time.time()
+
+            frame, blink_event, blink_status = blink_input.update()
+
+            if frame is None:
                 print("Could not read frame from webcam.")
                 break
 
-            face = detector.process_frame(frame)
-            face_found = face["face_found"]
-            raw_openness = face["raw_openness"]
+            face_found = blink_status["face_found"]
 
             best_time = leaderboard.get(username, 0)
             cv2.putText(
@@ -263,65 +282,6 @@ def main():
                 draw_center_text(frame, "M = menu    Q = quit", 380, 0.8, (255, 255, 255), 2)
 
             elif screen == "game":
-                if (
-                    not game["game_over"]
-                    and not game["game_started"]
-                    and face_found
-                    and not game["countdown_started"]
-                    and detector.calibration_phase == "WAITING"
-                ):
-                    detector.start_calibration(now)
-
-                if (
-                    not game["game_over"]
-                    and detector.calibration_phase != "WAITING"
-                    and not game["game_started"]
-                    and not game["countdown_started"]
-                    and not face_found
-                ):
-                    detector.calibration_phase = "WAITING"
-
-                if (
-                    not game["game_over"]
-                    and detector.calibration_phase != "WAITING"
-                    and not detector.calibration_complete
-                    and not game["game_started"]
-                ):
-                    calibration = detector.update_calibration(raw_openness, now)
-
-                    if calibration["phase"] == "OPEN_EYES":
-                        draw_center_text(frame, "CALIBRATION", 160, 1, (255, 255, 255), 2)
-                        draw_center_text(frame, "Keep eyes open", 230, 1, (0, 255, 255), 2)
-                    elif calibration["phase"] == "BLINK_TEST":
-                        draw_center_text(frame, "Blink slowly 3 times", 220, 1, (0, 255, 255), 2)
-                        draw_center_text(
-                            frame,
-                            f"Blinks: {calibration['blink_count']} / 3",
-                            275,
-                            0.9,
-                            (255, 255, 255),
-                            2,
-                        )
-                    elif calibration["phase"] == "READY":
-                        draw_center_text(frame, "READY", 210, 1.5, (0, 255, 255), 3)
-                        draw_center_text(
-                            frame,
-                            f"Threshold: {calibration['blink_threshold']:.2f}",
-                            275,
-                            0.9,
-                            (255, 255, 255),
-                            2,
-                        )
-
-                if (
-                    not game["game_over"]
-                    and detector.calibration_complete
-                    and not game["countdown_started"]
-                    and not game["game_started"]
-                ):
-                    game["countdown_started"] = True
-                    game["countdown_start_time"] = now
-
                 if not game["game_over"] and game["countdown_started"] and not game["game_started"]:
                     countdown_left = countdown_seconds - int(now - game["countdown_start_time"])
 
@@ -332,27 +292,26 @@ def main():
                         game["countdown_started"] = False
                         game["elapsed_time"] = 0
                         game["last_time"] = now
-                        detector.reset_blink_state()
+                        blink_input.reset_state()
 
                 if game["game_started"] and not game["game_over"] and face_found:
-                    blink = detector.update(face["signals"])
                     game["elapsed_time"] += now - game["last_time"]
                     update_challenge(game, now)
 
-                    if blink["blink_detected"]:
+                    if blink_event:
                         game["game_over"] = True
                         game["final_time"] = game["elapsed_time"]
                         update_best_time(leaderboard, username, game["final_time"])
 
-                elif not game["game_over"]:
-                    detector.reset_blink_state()
-
                 if game["game_started"] and not game["game_over"] and face_found:
                     draw_challenge(frame, game, now)
 
-                if not game["game_started"] and not game["countdown_started"]:
-                    if detector.calibration_phase == "WAITING":
-                        draw_center_text(frame, "Step into frame to calibrate", 240, 1, (0, 255, 255), 2)
+                if (
+                    not game["game_over"]
+                    and not game["game_started"]
+                    and not game["countdown_started"]
+                ):
+                    draw_center_text(frame, "Press C to calibrate", 240, 0.9, (0, 255, 255), 2)
                 elif game["game_started"] and not game["game_over"] and not face_found:
                     draw_center_text(frame, "PAUSED", 220, 2, (0, 255, 255), 4)
                     draw_center_text(
@@ -366,6 +325,7 @@ def main():
 
                 if game["game_over"]:
                     elapsed = game["final_time"]
+                    best_time = leaderboard.get(username, 0)
                     draw_center_text(frame, "GAME OVER", 220, 2, (0, 0, 255), 4)
                     draw_center_text(
                         frame,
@@ -377,8 +337,16 @@ def main():
                     )
                     draw_center_text(
                         frame,
-                        "SPACE = restart    M = menu    Q = quit",
-                        330,
+                        f"Best: {best_time:.2f} seconds",
+                        325,
+                        0.85,
+                        (0, 255, 255),
+                        2,
+                    )
+                    draw_center_text(
+                        frame,
+                        "R/SPACE = restart    M = menu    ESC = quit",
+                        370,
                         0.75,
                         (255, 255, 255),
                         2,
@@ -405,20 +373,24 @@ def main():
                 game["last_time"] = now
 
                 if debug_overlay:
-                    draw_debug_overlay(frame, detector.debug_status(raw_openness))
+                    draw_debug_overlay(frame, blink_status)
 
             cv2.imshow("Blink Survival", frame)
 
             key = cv2.waitKey(1) & 0xFF
 
             if key == ord("q"):
-                break
+                return "quit"
+            if key == 27:
+                return "quit"
 
             if screen == "menu":
                 if key == ord("s"):
                     game = reset_game(now)
-                    detector.reset_calibration()
                     screen = "game"
+                    if calibrate_for_game(blink_input):
+                        game["countdown_started"] = True
+                        game["countdown_start_time"] = time.time()
                 elif key == ord("l"):
                     leaderboard = load_leaderboard()
                     screen = "leaderboard"
@@ -433,27 +405,31 @@ def main():
 
                 if key == ord("c"):
                     game = reset_game(now)
-                    detector.start_calibration(now)
-
-                if key == ord("b") and game["game_started"] and not game["game_over"]:
-                    blink = detector.simulate_blink()
-                    game["game_over"] = True
-                    game["final_time"] = game["elapsed_time"]
-                    update_best_time(leaderboard, username, game["final_time"])
+                    if calibrate_for_game(blink_input):
+                        game["countdown_started"] = True
+                        game["countdown_start_time"] = time.time()
 
                 if key == ord("m") and game["game_over"]:
-                    game = reset_game(now)
-                    detector.reset_calibration()
-                    screen = "menu"
+                    if launch_from_app:
+                        return "menu"
+                    else:
+                        game = reset_game(now)
+                        screen = "menu"
 
-                if key == ord(" ") and game["game_over"]:
-                    game = reset_game(now)
-                    detector.reset_calibration()
+                if key == ord(" ") or (key == ord("r") and game["game_over"]):
+                    if game["game_started"] and not game["game_over"]:
+                        game["game_over"] = True
+                        game["final_time"] = game["elapsed_time"]
+                        update_best_time(leaderboard, username, game["final_time"])
+                    elif game["game_over"]:
+                        game = reset_game(now)
+                        if calibrate_for_game(blink_input):
+                            game["countdown_started"] = True
+                            game["countdown_start_time"] = time.time()
 
     finally:
-        detector.close()
-    cap.release()
-    cv2.destroyAllWindows()
+        blink_input.release()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

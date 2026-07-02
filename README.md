@@ -1,24 +1,25 @@
 # Staring Contest Final Boss
 
-Staring Contest Final Boss is a webcam-based blink detection game prototype. It uses a computer vision camera feed to detect when a player blinks and currently includes a simple survival mode where the goal is to keep your eyes open as long as possible.
+Staring Contest Final Boss is a webcam-based blink detection game prototype. It uses a computer vision camera feed to detect when a player blinks and includes survival and rhythm game modes.
 
 ## Current Features
 
 - Basic webcam test using OpenCV.
-- Reusable blink detection module using OpenCV and MediaPipe Face Landmarker.
-- Eye openness detection from face landmarks.
-- Optional MediaPipe blendshape blink signals when available.
-- Calibration flow before survival mode starts.
+- Shared `BlinkInput` module used by both game modes.
+- MediaPipe Face Mesh landmarks and an Eye Aspect Ratio-style openness score.
+- Adaptive open-eye calibration, smoothing, a blink state machine, and cooldown.
+- Safe pause/status behavior when no face is found.
 - Survival mode with timer, pause when the face leaves the camera, and game over on blink.
+- Rhythm mode where either a real blink or SPACE hits a note.
+- Single exhibit launcher with a main menu, instructions, calibration before play, and return-to-menu flow.
 - Username input for the current player.
 - Local leaderboard saved in `leaderboard.json`.
-- In-game menu with start, leaderboard, and quit options.
+- Survival and rhythm best scores saved locally.
 - Software-only challenge effects in survival mode.
 - Debug controls for blink detection testing.
 
 ## Planned Features
 
-- Rhythm mode where players blink on beat.
 - Stare zones where players must avoid blinking.
 - Arduino-connected exhibit effects.
 - LED effects.
@@ -28,9 +29,11 @@ Staring Contest Final Boss is a webcam-based blink detection game prototype. It 
 
 ## How It Works
 
-The game opens a webcam feed with OpenCV. MediaPipe Face Landmarker tracks one face and estimates eye openness from face landmarks. The blink detector can also use MediaPipe face blendshape scores, such as `eyeBlinkLeft` and `eyeBlinkRight`, when they are available.
+The shared `blink_input.py` module opens the webcam and uses MediaPipe Face Landmarker/Face Mesh landmarks to track one face. It combines both eyes into an Eye Aspect Ratio-style openness score.
 
-During calibration, the player keeps their eyes open and then blinks slowly a few times. The program uses those values to choose a blink threshold. During the game, the detector smooths recent eye readings and counts a blink when the closed-eye signal is strong enough for multiple frames.
+During calibration, the player keeps their eyes open for about three seconds. The detector learns their normal open-eye value and sets an adaptive threshold below it. During play, exponential smoothing, hysteresis, minimum/maximum closed-frame limits, and a cooldown state reject noise and ensure a full blink produces only one event. Losing face tracking never counts as a blink.
+
+The detector design is inspired by MediaPipe Face Mesh and adaptive Eye Aspect Ratio blink detection approaches.
 
 ## Setup
 
@@ -50,7 +53,7 @@ pip install -r requirements.txt
 If you are not using a virtual environment, you can install directly:
 
 ```powershell
-pip install opencv-python mediapipe
+pip install pygame opencv-python mediapipe numpy
 ```
 
 ## Run
@@ -64,7 +67,13 @@ python camera_test.py
 Run the standalone blink detector test:
 
 ```powershell
-python blink_detector.py
+python blink_input.py
+```
+
+Run the full exhibit app:
+
+```powershell
+python main.py
 ```
 
 Run survival mode:
@@ -73,12 +82,22 @@ Run survival mode:
 python survival_mode.py
 ```
 
+Run rhythm mode:
+
+```powershell
+python rhythm_mode.py
+```
+
+Keep your eyes open during each calibration. Press `Q` to quit the standalone blink test. SPACE remains a backup blink/hit input in both game modes.
+
 ## Project Structure
 
 - `camera_test.py` - Simple OpenCV webcam test.
-- `blink_detector.py` - Reusable blink detection and calibration code.
+- `main.py` - Simple exhibit launcher with mode select and instructions.
+- `blink_input.py` - Shared webcam, calibration, and advanced blink-event input.
 - `survival_mode.py` - Current playable survival game mode.
-- `leaderboard.json` - Local saved best times by username.
+- `rhythm_mode.py` - Playable blink rhythm game mode.
+- `leaderboard.json` - Local saved survival times and rhythm scores by username.
 - `requirements.txt` - Python package dependencies.
 - `face_landmarker.task` - MediaPipe model file. The code can download this if it is missing.
 
@@ -88,7 +107,7 @@ Future fan or bright-light effects will be kept low-power, optional, and not aim
 
 ## Status
 
-This is an early prototype. Survival mode and blink detection are working, but rhythm mode and Arduino effects are planned features, not finished parts of the project yet.
+This is an early prototype. Survival mode, rhythm mode, and shared blink input are working; physical exhibit effects remain future work.
 
 ## Team
 
