@@ -27,25 +27,25 @@ The goal is to make a weird, memorable exhibit game that feels instantly underst
 
 ---
 
-## ✅ Current Features
+## Current Features
 
-| Status | Feature |
-| --- | --- |
-| ✅ | Webcam input with OpenCV |
-| ✅ | MediaPipe Face Landmarker / Face Mesh tracking |
-| ✅ | Shared `BlinkInput` module |
-| ✅ | Eye openness / EAR-style blink detection |
-| ✅ | Adaptive calibration before play |
-| ✅ | Blink smoothing, state machine, and cooldown |
-| ✅ | SPACE keyboard backup input |
-| ✅ | Survival mode |
-| ✅ | Rhythm mode |
-| ✅ | Main menu / exhibit launcher |
-| ✅ | Instructions before each mode |
-| ✅ | Player profile saved locally |
-| ✅ | Local leaderboard saved in JSON |
-| ✅ | Settings menu with name, camera, fullscreen, and leaderboard reset |
-| ✅ | Standalone blink detector test mode |
+| Feature |
+| --- |
+| Webcam input with OpenCV |
+| MediaPipe Face Landmarker / Face Mesh tracking |
+| Shared `BlinkInput` module |
+| Eye openness / EAR-style blink detection |
+| Adaptive calibration before play |
+| Blink smoothing, state machine, and cooldown |
+| SPACE keyboard backup input |
+| Survival mode |
+| Rhythm mode |
+| Main menu / exhibit launcher |
+| Instructions before each mode |
+| Player profile saved locally |
+| Local leaderboard saved in JSON |
+| Settings menu with name, camera, fullscreen, and leaderboard reset |
+| Standalone blink detector test mode |
 
 ---
 
